@@ -22,14 +22,17 @@ Commit history reflects individual contributions.
 
 ## What it does
 
-- **Reads indoor environment** every minute (temperature, humidity, TVOC, eCO2) from SHT30 + SGP30 sensors connected to an M5Stack Core2.
-- **Pulls outdoor weather and a 5-day forecast** from OpenWeatherMap for the device's location (auto-detected via IP or set manually from a list of city presets).
-- **Stores all readings in BigQuery** for historical analysis.
-- **Voice assistant** — hold the middle button and ask in natural language: _"What was the humidity yesterday?"_, _"Do I need an umbrella tomorrow?"_, _"What's the weather in Paris?"_. Pipeline is Google Speech-to-Text → Gemini 2.5 Flash → Google Text-to-Speech, played back through the Core2 speaker.
-- **Motion-triggered announcements** — the PIR sensor wakes a context-aware weather rundown ("rain expected this afternoon, take an umbrella") at most once every 10 minutes.
-- **Alerts** — surfaces low humidity (<40%), poor air quality (TVOC > 220 ppb, eCO2 > 1000 ppm), and updates the Core2 RGB LED accordingly.
-- **Web dashboard** — Streamlit app with Overview, Trends, Air Quality, Outdoor, Statistics, and Location pages backed by BigQuery, including a SARIMA-based forecast.
-- **Resilient to power loss / network drops** — on boot the device syncs its last known reading from BigQuery, caches the backend host across reboots, and falls back to UDP broadcast / hardcoded fallback IPs if DNS fails. WiFi credentials can be reconfigured on-device through a captive portal — no reflashing required.
+The M5Stack sits on your desk and quietly logs what's going on in your room: temperature, humidity, and the kind of air you're actually breathing (TVOC and eCO2 from an SGP30), once a minute, every minute. It pairs that with live outdoor conditions and a 5-day forecast from OpenWeatherMap for wherever you are, either auto-detected from your IP or picked from a city dropdown. Everything streams into BigQuery so the dashboard can show you patterns over days, weeks, or longer.
+
+Hold the middle button and talk to it. _"What was the humidity yesterday?"_ _"Do I need an umbrella tomorrow?"_ _"What's the weather in Paris?"_ Your voice goes to Google Speech-to-Text, the transcript gets handed to Gemini 2.5 Flash along with whatever sensor history and forecast data the question needs, and the answer comes back as actual speech through the Core2 speaker. The whole round-trip takes about three seconds.
+
+Walk into the room and the PIR sensor catches you. If something useful is happening, like rain on the way, air that's gone stale, or indoor temperature creeping up, the device speaks up. But only once every ten minutes, because nobody wants to be lectured by their weather station.
+
+When humidity drops below 40% or air quality goes bad, the onboard RGB LED changes color and an alert flags the screen. You don't have to be looking at the device to know something's off.
+
+The Streamlit dashboard gives you the same data on a bigger screen: current conditions, trends over time, air quality breakdowns, the outdoor forecast, day-to-day statistics, and a SARIMA-based indoor forecast that learns from your sensor history.
+
+And the whole thing is built to survive real-world conditions. Pull the plug and plug it back in: the device pulls its last reading from BigQuery so you're not staring at a blank screen during boot. Move to a different WiFi network: change the SSID and password directly on the device through a captive portal, no reflashing or laptop required. The backend even broadcasts itself on the LAN so the device can find it without any hardcoded IPs.
 
 ---
 
