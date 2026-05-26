@@ -8,15 +8,9 @@ An indoor/outdoor weather monitor built on the M5Stack Core2 with a cloud backen
 
 ---
 
-## Team & Contributions
+## Author
 
-| Member | Role / Contribution |
-|---|---|
-| **Ismael Ouarit** | _e.g. M5Stack firmware, voice pipeline, BigQuery integration_ |
-| _Teammate name_ | _e.g. Streamlit dashboard, deployment, forecasting model_ |
-| _Teammate name_ | _e.g. UI/UX, sensors, WiFi captive portal_ |
-
-Commit history reflects individual contributions.
+**Ismael Ouarit** — solo project. Designed and built the entire stack: M5Stack Core2 firmware (sensors, touch UI, voice pipeline, WiFi captive portal, motion-triggered announcements), Flask backend on Cloud Run (BigQuery integration, OpenWeatherMap, Google Speech-to-Text and Text-to-Speech, Gemini 2.5 Flash, SARIMA forecasting), and the Streamlit dashboard on Cloud Run.
 
 ---
 
