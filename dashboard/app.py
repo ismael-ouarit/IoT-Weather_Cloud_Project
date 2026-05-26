@@ -475,13 +475,15 @@ def cond_icon(condition: str) -> str:
 def bq_client():
     import json
     from google.oauth2 import service_account
-    if not _CREDS_PATH:
-        st.error(f"No GCP service-account JSON found under {_PROJECT_ROOT}.")
-        st.stop()
-    with open(_CREDS_PATH) as f:
-        info = json.load(f)
-    creds = service_account.Credentials.from_service_account_info(info)
-    return bigquery.Client(project=info.get("project_id"), credentials=creds)
+    # Local dev: load creds from a service-account JSON in the repo.
+    if _CREDS_PATH:
+        with open(_CREDS_PATH) as f:
+            info = json.load(f)
+        creds = service_account.Credentials.from_service_account_info(info)
+        return bigquery.Client(project=info.get("project_id"), credentials=creds)
+    # Cloud Run: no JSON file — Application Default Credentials come from
+    # the runtime service account automatically.
+    return bigquery.Client()
 
 
 @st.cache_data(ttl=60)
