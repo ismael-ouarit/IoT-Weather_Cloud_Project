@@ -1,0 +1,41 @@
+# ── Secrets — NEVER commit these ────────────────────────────────────────────
+.env
+*.env
+!.env.example
+ioi-weather-forecast-*.json
+config/*-credentials.json
+*service-account*.json
+*-key.json
+
+# ── Python ──────────────────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# ── Device runtime files (created on M5Stack flash) ─────────────────────────
+*.wav
+api_host.txt
+location.json
+device_settings.json
+
+# ── OS junk ─────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── IDE ─────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Build / deploy ──────────────────────────────────────────────────────────
+*.log
+.streamlit/secrets.toml
