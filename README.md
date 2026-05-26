@@ -3,8 +3,8 @@
 An indoor/outdoor weather monitor built on the M5Stack Core2 with a cloud backend, voice assistant, and Streamlit dashboard. Built for the **Cloud and Advanced Analytics** course (HEC Lausanne, 2026).
 
 > **Demo video:** [YouTube — _add link here_](https://youtu.be/REPLACE_ME)
-> **Live dashboard:** [Streamlit on Cloud Run — _add URL_](https://REPLACE_ME.run.app)
-> **Backend API:** [Flask on Cloud Run — _add URL_](https://REPLACE_ME.run.app)
+> **Live dashboard:** <https://weather-dashboard-1087371609781.europe-west6.run.app>
+> **Backend API:** <https://weather-backend-1087371609781.europe-west6.run.app>
 
 ---
 
