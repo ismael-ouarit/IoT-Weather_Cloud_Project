@@ -1,18 +1,198 @@
-# M5Stack Weather Station
+# IoT Weather Station
 
-This project implements an indoor/outdoor weather monitor with an M5Stack Core2 device, Google Cloud (Run & BigQuery), and a Streamlit dashboard.
+An indoor/outdoor weather monitor built on the M5Stack Core2 with a cloud backend, voice assistant, and Streamlit dashboard. Built for the **Cloud and Advanced Analytics** course (HEC Lausanne, 2026).
 
-## Architecture
-- **M5Stack Device**: Collects indoor telemetry (Temp, Humidity, Air Quality, Motion). Displays data and interacts with users via voice.
-- **Middleware (Flask)**: Deployed on Google Cloud Run. Bridges the M5Stack UI with the database, and accesses external APIs (OpenWeatherMap, Google Cloud/OpenAI).
-- **Dashboard (Streamlit)**: Deployed on Google Cloud Run. Displays current and historical data from BigQuery in a polished UI.
+> **Demo video:** [YouTube — _add link here_](https://youtu.be/REPLACE_ME)
+> **Live dashboard:** [Streamlit on Cloud Run — _add URL_](https://REPLACE_ME.run.app)
+> **Backend API:** [Flask on Cloud Run — _add URL_](https://REPLACE_ME.run.app)
 
-## Getting Started
-Please see the individual directories for details on how to deploy or run each component:
-- `backend-api/`: Flask application deployment.
-- `dashboard/`: Streamlit dashboard deployment.
-- `m5stack-device/`: Firmware loading and setup.
+---
 
-## Deployment Variables
-The system relies on various abstracted variables across components. 
-Check `.env.example` to see required configuration properties.
+## Team & Contributions
+
+| Member | Role / Contribution |
+|---|---|
+| **Ismael Ouarit** | _e.g. M5Stack firmware, voice pipeline, BigQuery integration_ |
+| _Teammate name_ | _e.g. Streamlit dashboard, deployment, forecasting model_ |
+| _Teammate name_ | _e.g. UI/UX, sensors, WiFi captive portal_ |
+
+Commit history reflects individual contributions.
+
+---
+
+## What it does
+
+- **Reads indoor environment** every minute (temperature, humidity, TVOC, eCO2) from SHT30 + SGP30 sensors connected to an M5Stack Core2.
+- **Pulls outdoor weather and a 5-day forecast** from OpenWeatherMap for the device's location (auto-detected via IP or set manually from a list of city presets).
+- **Stores all readings in BigQuery** for historical analysis.
+- **Voice assistant** — hold the middle button and ask in natural language: _"What was the humidity yesterday?"_, _"Do I need an umbrella tomorrow?"_, _"What's the weather in Paris?"_. Pipeline is Google Speech-to-Text → Gemini 2.5 Flash → Google Text-to-Speech, played back through the Core2 speaker.
+- **Motion-triggered announcements** — the PIR sensor wakes a context-aware weather rundown ("rain expected this afternoon, take an umbrella") at most once every 10 minutes.
+- **Alerts** — surfaces low humidity (<40%), poor air quality (TVOC > 220 ppb, eCO2 > 1000 ppm), and updates the Core2 RGB LED accordingly.
+- **Web dashboard** — Streamlit app with Overview, Trends, Air Quality, Outdoor, Statistics, and Location pages backed by BigQuery, including a SARIMA-based forecast.
+- **Resilient to power loss / network drops** — on boot the device syncs its last known reading from BigQuery, caches the backend host across reboots, and falls back to UDP broadcast / hardcoded fallback IPs if DNS fails. WiFi credentials can be reconfigured on-device through a captive portal — no reflashing required.
+
+---
+
+## Architecture (3-tier)
+
+```
+┌─────────────────────┐      ┌──────────────────────┐      ┌────────────────────┐
+│   M5Stack Core2     │      │  Flask API           │      │  BigQuery          │
+│   (MicroPython)     │◄────►│  (Cloud Run)         │◄────►│  weather_station   │
+│                     │      │                      │      │  dataset           │
+│ • SHT30 (T/H)       │      │ • Sensor ingest      │      └────────────────────┘
+│ • SGP30 (air)       │      │ • Voice pipeline     │
+│ • PIR (motion)      │      │ • Weather + forecast │      ┌────────────────────┐
+│ • Touch UI (8 scr.) │      │ • Announcements      │◄────►│  External APIs     │
+│ • Mic / speaker     │      │ • SARIMA forecasting │      │  • OpenWeatherMap  │
+│ • RGB alerts        │      └──────────────────────┘      │  • Google STT/TTS  │
+└─────────────────────┘                ▲                   │  • Gemini 2.5      │
+          ▲                            │                   └────────────────────┘
+          │                            │
+          │                  ┌──────────────────────┐
+          └─────────────────►│  Streamlit Dashboard │
+            UDP discovery    │  (Cloud Run)         │
+                             └──────────────────────┘
+```
+
+---
+
+## Repository structure
+
+```
+.
+├── backend-api/            Flask middleware (Cloud Run)
+│   ├── app.py                  HTTP routes + UDP discovery server
+│   ├── bq_client.py            BigQuery read/write
+│   ├── weather_client.py       OpenWeatherMap wrapper
+│   ├── voice_assistant.py      STT → Gemini → TTS pipeline
+│   ├── announcement_service.py Motion-triggered weather rundowns
+│   ├── forecast_service.py     SARIMA-based indoor forecasting
+│   └── requirements.txt
+│
+├── dashboard/              Streamlit web dashboard (Cloud Run)
+│   ├── app.py                  Multi-page UI backed by BigQuery
+│   ├── .streamlit/config.toml  Theme
+│   └── requirements.txt
+│
+├── m5stack-device/         MicroPython firmware for M5Stack Core2
+│   ├── uiflow_combined.py      Main firmware: 8 screens, sensors, voice
+│   ├── wifi_manager.py         Captive portal for WiFi changes
+│   └── test_*.py               Standalone hardware diagnostics
+│
+├── config/                 Shared configuration scaffolding
+│   └── settings.py             Env-var loader
+│
+├── .env.example            Template for required environment variables
+└── README.md
+```
+
+---
+
+## Setup & Deployment
+
+### 0. Prerequisites
+- Google Cloud project with billing enabled and the following APIs activated:
+  BigQuery, Cloud Run, Cloud Build, Speech-to-Text, Text-to-Speech, Generative Language (Gemini).
+- A service account with `BigQuery Data Editor`, `BigQuery Job User`, and the relevant speech/AI permissions. Download its JSON key.
+- An **OpenWeatherMap** API key (free tier is enough).
+- An **M5Stack Core2** with ENVIII (SHT30), TVOC/eCO2 (SGP30), and PIR units.
+
+### 1. BigQuery setup
+Create a dataset called `weather_station` with two tables:
+
+| Table | Columns |
+|---|---|
+| `sensor_data` | `timestamp TIMESTAMP`, `temperature FLOAT`, `humidity FLOAT`, `tvoc INT64`, `eco2 INT64` |
+| `weather_data` | `timestamp TIMESTAMP`, `temperature FLOAT`, `outdoor_humidity FLOAT`, `wind_speed FLOAT`, `weather_condition STRING` |
+
+### 2. Environment variables
+
+Copy `.env.example` to `.env` (kept out of git) and fill in:
+
+```env
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+GCP_PROJECT_ID=your-project-id
+BQ_DATASET_NAME=weather_station
+
+OPENWEATHERMAP_API_KEY=...
+GEMINI_API_KEY=...
+
+LATITUDE=46.5197
+LONGITUDE=6.6323
+```
+
+### 3. Deploy the Flask backend to Cloud Run
+
+```bash
+cd backend-api
+gcloud run deploy weather-backend \
+  --source . \
+  --region europe-west6 \
+  --allow-unauthenticated \
+  --set-env-vars "GCP_PROJECT_ID=...,BQ_DATASET_NAME=weather_station,OPENWEATHERMAP_API_KEY=...,GEMINI_API_KEY=..."
+```
+
+### 4. Deploy the Streamlit dashboard to Cloud Run
+
+```bash
+cd dashboard
+gcloud run deploy weather-dashboard \
+  --source . \
+  --region europe-west6 \
+  --allow-unauthenticated \
+  --set-env-vars "GCP_PROJECT_ID=...,BQ_DATASET_NAME=weather_station,BACKEND_URL=https://weather-backend-xxx.run.app"
+```
+
+### 5. Flash the M5Stack
+
+1. Open [UIFlow](https://flow.m5stack.com/) and connect the Core2.
+2. Upload [`m5stack-device/uiflow_combined.py`](m5stack-device/uiflow_combined.py) and [`m5stack-device/wifi_manager.py`](m5stack-device/wifi_manager.py) to `/flash/`.
+3. Set `uiflow_combined.py` as the boot script.
+4. On first boot the device joins `M5Weather-Setup`; connect any phone/laptop and open `http://192.168.4.1` to enter WiFi credentials. The same flow can be re-triggered at any time from the **Network** screen.
+
+### 6. Running locally (optional, for development)
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -r backend-api/requirements.txt
+pip install -r dashboard/requirements.txt
+
+# Backend
+cd backend-api && python app.py
+
+# Dashboard
+cd dashboard && streamlit run app.py
+```
+
+---
+
+## Features mapped to the rubric
+
+| Requirement | Where it lives |
+|---|---|
+| BigQuery storage | [backend-api/bq_client.py](backend-api/bq_client.py) |
+| Indoor T/H + air quality + motion | [m5stack-device/uiflow_combined.py](m5stack-device/uiflow_combined.py) — `read_sht30`, `read_sgp30`, `read_pir` |
+| Time/date via NTP | `sync_ntp()` in [uiflow_combined.py](m5stack-device/uiflow_combined.py) |
+| Outdoor weather + 5-day forecast | [backend-api/weather_client.py](backend-api/weather_client.py) |
+| Alerts (humidity, air quality) | `gen_alerts()` in [uiflow_combined.py](m5stack-device/uiflow_combined.py) |
+| Speech-to-text / Text-to-speech | [backend-api/voice_assistant.py](backend-api/voice_assistant.py) |
+| LLM-generated answers | Gemini 2.5 Flash, [voice_assistant.py](backend-api/voice_assistant.py) |
+| Motion-triggered announcements (rate-limited) | [backend-api/announcement_service.py](backend-api/announcement_service.py) |
+| Boot-time BigQuery sync | `get_latest_bq()` in [uiflow_combined.py](m5stack-device/uiflow_combined.py) |
+| WiFi reconfiguration on-device | [m5stack-device/wifi_manager.py](m5stack-device/wifi_manager.py) — captive portal |
+| Resilience to network loss | Lazy API resolution, cached host file, UDP discovery, fallback IPs |
+| Historical dashboard | [dashboard/app.py](dashboard/app.py) |
+| Indoor forecasting (SARIMA) | [backend-api/forecast_service.py](backend-api/forecast_service.py) |
+
+---
+
+## Security note
+
+No credentials are committed. `.env`, GCP service-account JSON, and any `*-key.json` files are excluded via [`.gitignore`](.gitignore). Always rotate keys after rotating contributors or if a key has been exposed.
+
+---
+
+## License
+
+MIT — see [`LICENSE`](LICENSE).
