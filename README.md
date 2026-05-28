@@ -36,21 +36,25 @@ And the whole thing is built to survive real-world conditions. Pull the plug and
 ┌─────────────────────┐      ┌──────────────────────┐      ┌────────────────────┐
 │   M5Stack Core2     │      │  Flask API           │      │  BigQuery          │
 │   (MicroPython)     │◄────►│  (Cloud Run)         │◄────►│  weather_station   │
-│                     │      │                      │      │  dataset           │
+│                     │ HTTP │                      │      │  dataset           │
 │ • SHT30 (T/H)       │      │ • Sensor ingest      │      └────────────────────┘
-│ • SGP30 (air)       │      │ • Voice pipeline     │
-│ • PIR (motion)      │      │ • Weather + forecast │      ┌────────────────────┐
-│ • Touch UI (8 scr.) │      │ • Announcements      │◄────►│  External APIs     │
-│ • Mic / speaker     │      │ • SARIMA forecasting │      │  • OpenWeatherMap  │
-│ • RGB alerts        │      └──────────────────────┘      │  • Google STT/TTS  │
-└─────────────────────┘                ▲                   │  • Gemini 2.5      │
-          ▲                            │                   └────────────────────┘
-          │                            │
-          │                  ┌──────────────────────┐
-          └─────────────────►│  Streamlit Dashboard │
-            UDP discovery    │  (Cloud Run)         │
-                             └──────────────────────┘
+│ • SGP30 (air)       │ +UDP │ • Voice pipeline     │                 ▲
+│ • PIR (motion)      │ disc │ • Weather + forecast │                 │
+│ • Touch UI (8 scr.) │      │ • Announcements      │                 │
+│ • Mic / speaker     │      │ • SARIMA forecasting │                 │  reads
+│ • RGB alerts        │      └──────────────────────┘                 │
+└─────────────────────┘                ▲                   ┌──────────┴───────────┐
+                                       │ HTTP              │  Streamlit Dashboard │
+                                       ▼                   │  (Cloud Run)         │
+                              ┌────────────────────┐       └──────────────────────┘
+                              │  External APIs     │                 ▲
+                              │  • OpenWeatherMap  │◄──── HTTP ──────┘
+                              │  • Google STT/TTS  │     (live weather)
+                              │  • Gemini 2.5      │
+                              └────────────────────┘
 ```
+
+The dashboard reads BigQuery directly and hits OpenWeatherMap for live conditions; it never calls the Flask backend or talks to the device. UDP discovery lives between the device and the backend on a LAN deployment (the device broadcasts to find the backend's IP) and is unused on Cloud Run, where the backend has a stable URL.
 
 ---
 
