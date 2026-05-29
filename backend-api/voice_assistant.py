@@ -18,8 +18,6 @@ import google.generativeai as genai
 from bq_client import (
     get_latest_reading,
     get_sensor_stats_for_date,
-    get_historical_data,
-    check_threshold,
 )
 from weather_client import get_current_weather, get_weather_by_city, get_5day_forecast, get_5day_forecast_by_city
 
@@ -373,31 +371,3 @@ def text_to_speech(text: str, voice: str = "nova") -> bytes:
     return _pcm_to_wav(response.audio_content, sample_rate=16000)
 
 
-# ---------------------------------------------------------------------------
-# Full pipeline: audio in → answer audio out
-# ---------------------------------------------------------------------------
-
-def process_voice_query(audio_bytes: bytes, lat: str = None, lon: str = None) -> dict:
-    """
-    Full voice query pipeline:
-    1. Transcribe audio (STT)
-    2. Parse and answer the question
-    3. Generate spoken answer (TTS)
-
-    Returns:
-        dict with 'transcription', 'answer', 'audio' (MP3 bytes)
-    """
-    transcription = transcribe_audio(audio_bytes)
-    answer = answer_question(transcription, lat=lat, lon=lon)
-
-    try:
-        audio = text_to_speech(answer)
-    except Exception as e:
-        print(f"[TTS] Failed: {e}")
-        audio = None
-
-    return {
-        "transcription": transcription,
-        "answer": answer,
-        "audio": audio,
-    }

@@ -10,7 +10,7 @@ An indoor/outdoor weather monitor built on the M5Stack Core2 with a cloud backen
 
 ## Author
 
-**Ismael Ouarit** — solo project. Designed and built the entire stack: M5Stack Core2 firmware (sensors, touch UI, voice pipeline, WiFi captive portal, motion-triggered announcements), Flask backend on Cloud Run (BigQuery integration, OpenWeatherMap, Google Speech-to-Text and Text-to-Speech, Gemini 2.5 Flash, SARIMA forecasting), and the Streamlit dashboard on Cloud Run.
+**Ismael Ouarit** — solo project. Designed and built the entire stack: M5Stack Core2 firmware (sensors, touch UI, voice pipeline, WiFi captive portal, motion-triggered announcements), Flask backend on Cloud Run (BigQuery integration, OpenWeatherMap, Google Speech-to-Text and Text-to-Speech, Gemini 2.5 Flash), and the Streamlit dashboard on Cloud Run.
 
 ---
 
@@ -24,7 +24,7 @@ Walk into the room and the PIR sensor catches you. If something useful is happen
 
 When humidity drops below 40% or air quality goes bad, the onboard RGB LED changes color and an alert flags the screen. You don't have to be looking at the device to know something's off.
 
-The Streamlit dashboard gives you the same data on a bigger screen: current conditions, trends over time, air quality breakdowns, the outdoor forecast, day-to-day statistics, and a SARIMA-based indoor forecast that learns from your sensor history.
+The Streamlit dashboard gives you the same data on a bigger screen: current conditions, trends over time, air quality breakdowns, the outdoor forecast, and day-to-day statistics.
 
 And the whole thing is built to survive real-world conditions. Pull the plug and plug it back in: the device pulls its last reading from BigQuery so you're not staring at a blank screen during boot. Move to a different WiFi network: change the SSID and password directly on the device through a captive portal, no reflashing or laptop required. The backend even broadcasts itself on the LAN so the device can find it without any hardcoded IPs.
 
@@ -41,7 +41,7 @@ And the whole thing is built to survive real-world conditions. Pull the plug and
 │ • SGP30 (air)       │ +UDP │ • Voice pipeline     │                 ▲
 │ • PIR (motion)      │ disc │ • Weather + forecast │                 │
 │ • Touch UI (8 scr.) │      │ • Announcements      │                 │
-│ • Mic / speaker     │      │ • SARIMA forecasting │                 │  reads
+│ • Mic / speaker     │      │                      │                 │  reads
 │ • RGB alerts        │      └──────────────────────┘                 │
 └─────────────────────┘                ▲                   ┌──────────┴───────────┐
                                        │ HTTP              │  Streamlit Dashboard │
@@ -68,21 +68,20 @@ The dashboard reads BigQuery directly and hits OpenWeatherMap for live condition
 │   ├── weather_client.py       OpenWeatherMap wrapper
 │   ├── voice_assistant.py      STT → Gemini → TTS pipeline
 │   ├── announcement_service.py Motion-triggered weather rundowns
-│   ├── forecast_service.py     SARIMA-based indoor forecasting
+│   ├── Dockerfile              Pinned Python 3.12 + gunicorn entrypoint
 │   └── requirements.txt
 │
 ├── dashboard/              Streamlit web dashboard (Cloud Run)
 │   ├── app.py                  Multi-page UI backed by BigQuery
+│   ├── weather_client.py       Local copy of the OWM wrapper
 │   ├── .streamlit/config.toml  Theme
+│   ├── Dockerfile              Pinned Python 3.12 + streamlit entrypoint
 │   └── requirements.txt
 │
 ├── m5stack-device/         MicroPython firmware for M5Stack Core2
 │   ├── uiflow_combined.py      Main firmware: 8 screens, sensors, voice
 │   ├── wifi_manager.py         Captive portal for WiFi changes
 │   └── test_*.py               Standalone hardware diagnostics
-│
-├── config/                 Shared configuration scaffolding
-│   └── settings.py             Env-var loader
 │
 ├── .env.example            Template for required environment variables
 └── README.md
@@ -113,14 +112,10 @@ Copy `.env.example` to `.env` (kept out of git) and fill in:
 
 ```env
 GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
-GCP_PROJECT_ID=your-project-id
 BQ_DATASET_NAME=weather_station
 
 OPENWEATHERMAP_API_KEY=...
 GEMINI_API_KEY=...
-
-LATITUDE=46.5197
-LONGITUDE=6.6323
 ```
 
 ### 3. Deploy the Flask backend to Cloud Run
@@ -131,7 +126,7 @@ gcloud run deploy weather-backend \
   --source . \
   --region europe-west6 \
   --allow-unauthenticated \
-  --set-env-vars "GCP_PROJECT_ID=...,BQ_DATASET_NAME=weather_station,OPENWEATHERMAP_API_KEY=...,GEMINI_API_KEY=..."
+  --set-env-vars "BQ_DATASET_NAME=weather_station,OPENWEATHERMAP_API_KEY=...,GEMINI_API_KEY=..."
 ```
 
 ### 4. Deploy the Streamlit dashboard to Cloud Run
@@ -142,7 +137,7 @@ gcloud run deploy weather-dashboard \
   --source . \
   --region europe-west6 \
   --allow-unauthenticated \
-  --set-env-vars "GCP_PROJECT_ID=...,BQ_DATASET_NAME=weather_station,BACKEND_URL=https://weather-backend-xxx.run.app"
+  --set-env-vars "BQ_DATASET_NAME=weather_station,OPENWEATHERMAP_API_KEY=..."
 ```
 
 ### 5. Flash the M5Stack
@@ -184,7 +179,6 @@ cd dashboard && streamlit run app.py
 | WiFi reconfiguration on-device | [m5stack-device/wifi_manager.py](m5stack-device/wifi_manager.py) — captive portal |
 | Resilience to network loss | Lazy API resolution, cached host file, UDP discovery, fallback IPs |
 | Historical dashboard | [dashboard/app.py](dashboard/app.py) |
-| Indoor forecasting (SARIMA) | [backend-api/forecast_service.py](backend-api/forecast_service.py) |
 
 ---
 

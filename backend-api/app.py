@@ -1,19 +1,15 @@
 import base64
-import json
-import struct
 import socket
 import threading
 from datetime import datetime, timedelta
-from flask import Flask, request, jsonify, send_file
-import io
+from flask import Flask, request, jsonify
 
 from bq_client import (
-    insert_sensor_data, insert_weather_data, get_historical_data,
+    insert_sensor_data, insert_weather_data,
     get_latest_reading, get_sensor_stats_for_date,
 )
 from weather_client import get_current_weather, get_5day_forecast
-from forecast_service import get_weather_forecast
-from voice_assistant import process_voice_query, answer_question, text_to_speech, transcribe_audio, normalize_and_scale_wav
+from voice_assistant import answer_question, text_to_speech, transcribe_audio, normalize_and_scale_wav
 from announcement_service import generate_announcement
 
 app = Flask(__name__)
@@ -81,17 +77,6 @@ def latest_reading():
     return jsonify({"error": "No data available"}), 404
 
 
-@app.route('/historical', methods=['GET'])
-def historical_data():
-    """Returns historical sensor data.
-    Query params:
-        hours: number of hours of history (default: 24)
-    """
-    hours = request.args.get('hours', 24, type=int)
-    data = get_historical_data(hours=hours)
-    return jsonify({"data": data, "count": len(data)}), 200
-
-
 @app.route('/daily_stats', methods=['GET'])
 def daily_stats():
     """Returns aggregated indoor stats for the last N days (oldest first).
@@ -148,51 +133,23 @@ def outdoor_forecast():
     return jsonify(result), 200
 
 
-@app.route('/forecast', methods=['GET'])
-def weather_forecast():
-    """Returns SARIMA-based indoor forecast from BigQuery sensor history.
-    Query params:
-        metric: 'temperature' or 'humidity' (default: temperature)
-        hours: forecast horizon in hours (default: 72 = 3 days)
-        history_hours: how much past data to feed the model (default: 336 = 14 days)
-    """
-    metric = request.args.get('metric', 'temperature')
-    hours = request.args.get('hours', 72, type=int)
-    history_hours = request.args.get('history_hours', 336, type=int)
-
-    if metric not in ('temperature', 'humidity'):
-        return jsonify({"error": "metric must be 'temperature' or 'humidity'"}), 400
-
-    records = get_historical_data(hours=history_hours)
-    source = "indoor_sensor"
-
-    # SARIMA needs ≥48 hourly points. If history is too sparse, fall back to mock
-    # so the device still has *something* to display rather than an error screen.
-    if not records or len(records) < 48:
-        records = None
-        source = "mock"
-
-    result = get_weather_forecast(records=records, metric=metric, forecast_hours=hours)
-    if "error" in result:
-        return jsonify(result), 500
-
-    result["source"] = source
-    return jsonify(result), 200
-
-
 # ── Voice Assistant ───────────────────────────────────────────────────────────
 
 @app.route('/voice_query', methods=['POST'])
 def voice_query():
     """
-    Full voice pipeline: receive WAV audio, transcribe, answer, return TTS audio.
+    Voice query: receive WAV audio, transcribe via Google STT, generate an
+    answer via Gemini, return both as JSON. The device fetches the spoken
+    answer separately via POST /tts to avoid urequests truncating large
+    binary responses on MicroPython.
 
-    Expects:
+    Accepted audio payloads:
         - multipart/form-data with an 'audio' file field (WAV), OR
-        - JSON body with 'audio_base64' containing base64-encoded WAV
+        - JSON body with 'audio_base64' containing base64-encoded WAV, OR
+        - raw binary body with Content-Type audio/wav or octet-stream
 
     Returns:
-        JSON with 'transcription', 'answer', and 'audio_base64' (base64 MP3).
+        JSON {"transcription": str, "answer": str}
     """
     audio_bytes = None
 
@@ -210,40 +167,15 @@ def voice_query():
     if not audio_bytes:
         return jsonify({"error": "No audio provided. Send 'audio' file or 'audio_base64' in JSON."}), 400
 
-    # audio modes:
-    #   'true'  → JSON {transcription, answer, audio_base64} (legacy, slow on M5Stack)
-    #   'false' → JSON {transcription, answer} (text only, device fetches TTS separately)
-    #   'raw'   → length-prefixed binary: [4-byte LE uint32 meta-len][JSON meta][WAV bytes]
-    #             — combined STT+LLM+TTS in ONE call to save a network round-trip.
-    audio_mode = request.args.get('audio', 'true').lower()
-    vol = request.args.get('vol', default=10, type=int)
-
     # Device passes its current location so weather answers reflect the user's
     # selected city, not the server's default.
     lat = request.args.get('lat')
     lon = request.args.get('lon')
 
     try:
-        if audio_mode == 'raw':
-            transcription = transcribe_audio(audio_bytes)
-            answer = answer_question(transcription, lat=lat, lon=lon)
-            wav_bytes = text_to_speech(answer)
-            if 1 <= vol <= 10:
-                wav_bytes = normalize_and_scale_wav(wav_bytes, vol)
-            meta = json.dumps({"transcription": transcription, "answer": answer}).encode('utf-8')
-            return struct.pack('<I', len(meta)) + meta + wav_bytes, 200, {
-                'Content-Type': 'application/octet-stream'
-            }
-        if audio_mode == 'false':
-            transcription = transcribe_audio(audio_bytes)
-            answer = answer_question(transcription, lat=lat, lon=lon)
-            return jsonify({"transcription": transcription, "answer": answer}), 200
-        result = process_voice_query(audio_bytes, lat=lat, lon=lon)
-        return jsonify({
-            "transcription": result["transcription"],
-            "answer": result["answer"],
-            "audio_base64": base64.b64encode(result["audio"]).decode("utf-8") if result["audio"] else "",
-        }), 200
+        transcription = transcribe_audio(audio_bytes)
+        answer = answer_question(transcription, lat=lat, lon=lon)
+        return jsonify({"transcription": transcription, "answer": answer}), 200
     except Exception as e:
         return jsonify({"error": f"Voice query failed: {str(e)}"}), 500
 

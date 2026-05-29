@@ -58,36 +58,6 @@ def insert_weather_data(weather_api_response):
         print(f"[BQ] Error inserting weather_data: {e}")
 
 
-def get_historical_data(hours=24):
-    """
-    Fetches historical sensor data from BigQuery for the last N hours.
-    Returns a list of dicts with timestamp, temperature, humidity, tvoc, eco2.
-    """
-    try:
-        client = get_bq_client()
-        table_id = _table_id()
-        query = f"""
-            SELECT timestamp, temperature, humidity, tvoc, eco2
-            FROM `{table_id}`
-            WHERE timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {int(hours)} HOUR)
-            ORDER BY timestamp ASC
-        """
-        results = client.query(query).result()
-        rows = []
-        for row in results:
-            rows.append({
-                "timestamp": row.timestamp.isoformat() if hasattr(row.timestamp, 'isoformat') else str(row.timestamp),
-                "temperature": float(row.temperature) if row.temperature is not None else None,
-                "humidity": float(row.humidity) if row.humidity is not None else None,
-                "tvoc": int(row.tvoc) if row.tvoc is not None else None,
-                "eco2": int(row.eco2) if row.eco2 is not None else None,
-            })
-        return rows
-    except Exception as e:
-        print(f"Error fetching historical data: {e}")
-        return []
-
-
 def get_latest_reading():
     """
     Returns the most recent sensor data row from BigQuery.
@@ -114,36 +84,6 @@ def get_latest_reading():
     except Exception as e:
         print(f"Error fetching latest reading: {e}")
         return None
-
-
-def get_sensor_data_for_date(date_str):
-    """
-    Returns all sensor readings for a specific date (format: 'YYYY-MM-DD').
-    Includes aggregated stats (min, max, avg).
-    """
-    try:
-        client = get_bq_client()
-        table_id = _table_id()
-        query = f"""
-            SELECT timestamp, temperature, humidity, tvoc, eco2
-            FROM `{table_id}`
-            WHERE DATE(timestamp) = DATE('{date_str}')
-            ORDER BY timestamp ASC
-        """
-        results = client.query(query).result()
-        rows = []
-        for row in results:
-            rows.append({
-                "timestamp": row.timestamp.isoformat() if hasattr(row.timestamp, 'isoformat') else str(row.timestamp),
-                "temperature": float(row.temperature) if row.temperature is not None else None,
-                "humidity": float(row.humidity) if row.humidity is not None else None,
-                "tvoc": int(row.tvoc) if row.tvoc is not None else None,
-                "eco2": int(row.eco2) if row.eco2 is not None else None,
-            })
-        return rows
-    except Exception as e:
-        print(f"Error fetching data for date {date_str}: {e}")
-        return []
 
 
 def get_sensor_stats_for_date(date_str):
@@ -193,61 +133,3 @@ def get_sensor_stats_for_date(date_str):
         return None
 
 
-def check_threshold(metric, threshold, date_str=None, direction="above"):
-    """
-    Checks if a given metric exceeded (or fell below) a threshold.
-
-    Args:
-        metric: 'temperature', 'humidity', 'tvoc', or 'eco2'
-        threshold: numeric threshold value
-        date_str: date to check (YYYY-MM-DD). If None, checks last 24 hours.
-        direction: 'above' or 'below'
-
-    Returns:
-        dict with 'exceeded': bool, 'count': number of readings that crossed,
-        'peak_value': the most extreme value, 'peak_time': when it occurred.
-    """
-    try:
-        client = get_bq_client()
-        table_id = _table_id()
-
-        comparator = ">" if direction == "above" else "<"
-        order = "DESC" if direction == "above" else "ASC"
-
-        if date_str:
-            date_filter = f"DATE(timestamp) = DATE('{date_str}')"
-        else:
-            date_filter = "timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)"
-
-        query = f"""
-            SELECT timestamp, {metric}
-            FROM `{table_id}`
-            WHERE {date_filter} AND {metric} {comparator} {threshold}
-            ORDER BY {metric} {order}
-        """
-        results = list(client.query(query).result())
-
-        if not results:
-            return {
-                "exceeded": False,
-                "count": 0,
-                "peak_value": None,
-                "peak_time": None,
-                "metric": metric,
-                "threshold": threshold,
-                "direction": direction,
-            }
-
-        peak_row = results[0]
-        return {
-            "exceeded": True,
-            "count": len(results),
-            "peak_value": float(getattr(peak_row, metric)),
-            "peak_time": peak_row.timestamp.isoformat() if hasattr(peak_row.timestamp, 'isoformat') else str(peak_row.timestamp),
-            "metric": metric,
-            "threshold": threshold,
-            "direction": direction,
-        }
-    except Exception as e:
-        print(f"Error checking threshold: {e}")
-        return {"exceeded": False, "error": str(e)}
